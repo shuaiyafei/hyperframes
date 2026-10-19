@@ -12,6 +12,14 @@
  */
 
 import {
+  CAPTURE_CANVAS_SELECTOR,
+  htmlInCanvasForm,
+  markCaptureCanvas,
+  markCaptured,
+  unmarkCaptured,
+  type HtmlInCanvasForm,
+} from "../../htmlInCanvas";
+import {
   PAGE_DEVICE_SCALE_GLOBAL,
   PAGE_MOTION_BLUR_OFF_GLOBAL,
   supportsCaptureMotionBlur,
@@ -128,7 +136,7 @@ export function trackAcceleratedCanvases(): void {
 /** What in the composition the capture cannot take, checked again per frame (scripts add canvases). */
 function captureBlocker(root: HTMLElement): string | null {
   // A capture canvas inside another one blocks the renderer's main thread.
-  if (root.querySelector("canvas[layoutsubtree]"))
+  if (root.querySelector(CAPTURE_CANVAS_SELECTOR))
     return "the composition already uses html-in-canvas";
   for (const canvas of root.querySelectorAll("canvas")) {
     if (acceleratedCanvases.has(canvas))
@@ -179,13 +187,13 @@ function makeCanvas(width: number, height: number, role: string): HTMLCanvasElem
   return canvas;
 }
 
-function createInstance(host: CaptureMotionBlurHost, config: Config) {
+function createInstance(host: CaptureMotionBlurHost, config: Config, form: HtmlInCanvasForm) {
   const { root } = host;
   const { width, height } = rootSize(root);
   const src = makeCanvas(width, height, "capture") as PaintCanvas;
   const out = makeCanvas(width, height, "output");
   out.style.pointerEvents = "none";
-  src.setAttribute("layoutsubtree", "");
+  markCaptureCanvas(src, form);
 
   const captureContext = src.getContext("2d") as DrawElementContext | null;
   const outputContext = out.getContext("2d");
@@ -221,6 +229,7 @@ function createInstance(host: CaptureMotionBlurHost, config: Config) {
     if (wrapped) return;
     root.before(src);
     src.append(root);
+    markCaptured(root, form);
     src.after(out);
     document.head.append(hideRule);
     wrapped = true;
@@ -239,6 +248,7 @@ function createInstance(host: CaptureMotionBlurHost, config: Config) {
     if (!wrapped) return;
     wrapped = false;
     hideRule.remove();
+    unmarkCaptured(root, form);
     src.before(root);
     src.remove();
     out.remove();
@@ -543,8 +553,9 @@ export function initCaptureMotionBlur(host: CaptureMotionBlurHost): void {
     instance.rediscover();
     return;
   }
+  const form = htmlInCanvasForm();
   const reason = unsupportedReason(host.root);
-  if (reason) {
+  if (!form || reason) {
     console.info(`[motion-blur] off: ${reason}`);
     w.__hfMotionBlur = {
       report: () => ({
@@ -561,7 +572,7 @@ export function initCaptureMotionBlur(host: CaptureMotionBlurHost): void {
     };
     return;
   }
-  instance = createInstance(host, config);
+  instance = createInstance(host, config, form);
   const current = instance;
   w.__hfMotionBlur = { report: () => current.report() };
 }
