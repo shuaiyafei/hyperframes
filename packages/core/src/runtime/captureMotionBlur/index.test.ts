@@ -523,4 +523,93 @@ describe("painting", () => {
     expect(root.parentElement).toBe(document.body);
     expect(win.__hfMotionBlur?.report()).toMatchObject({ state: "off" });
   });
+
+  it("keeps blurring in a render after repeated capture failures, each failed frame plain DOM", async () => {
+    installHtmlInCanvas();
+    const { root, h } = movingHost();
+    initCaptureMotionBlur(h);
+    const engineFrame = async (i: number): Promise<void> => {
+      const done = paintCaptureMotionBlur(i / 30, { engineMode: true });
+      releaseCaptureMotionBlurFrame();
+      captureCanvas(root).dispatchEvent(new Event("paint"));
+      await done;
+    };
+    captureContext()?.drawElementImage.mockImplementation(() => {
+      throw new Error("No cached paint record");
+    });
+    for (let i = 0; i < 5; i++) {
+      await engineFrame(i);
+      expect(root.parentElement).toBe(document.body);
+    }
+    expect(win.__hfMotionBlur?.report()).toMatchObject({ state: "on", failures: 5 });
+    captureContext()?.drawElementImage.mockReset();
+    const done = paintCaptureMotionBlur(0.5, { engineMode: true });
+    expect(captureCanvas(root).tagName).toBe("CANVAS");
+    releaseCaptureMotionBlurFrame();
+    captureCanvas(root).dispatchEvent(new Event("paint"));
+    captureCanvas(root).dispatchEvent(new Event("paint"));
+    await done;
+    expect(win.__hfMotionBlur?.report()).toMatchObject({ state: "on", failures: 0, frames: 6 });
+    expect(contexts[1]?.drawImage.mock.calls.length).toBeGreaterThan(1);
+  });
+});
+
+describe("device pixel ratio", () => {
+  it("sizes the capture and output canvases in device pixels and keeps the CSS size", () => {
+    installHtmlInCanvas();
+    vi.stubGlobal("devicePixelRatio", 2);
+    const { root, h } = movingHost();
+    initCaptureMotionBlur(h);
+    void paintCaptureMotionBlur(0.5, PLAY);
+    const src = captureCanvas(root);
+    const out = src.nextElementSibling as HTMLCanvasElement;
+    for (const canvas of [src, out]) {
+      expect([canvas.width, canvas.height]).toEqual([1280, 720]);
+      expect([canvas.style.width, canvas.style.height]).toEqual(["640px", "360px"]);
+    }
+  });
+
+  it("builds the accumulation buffer in device pixels", () => {
+    installHtmlInCanvas();
+    vi.stubGlobal("devicePixelRatio", 2);
+    const sizes: number[][] = [];
+    const Fake = (
+      globalThis as unknown as { OffscreenCanvas: new (w: number, h: number) => object }
+    ).OffscreenCanvas;
+    vi.stubGlobal(
+      "OffscreenCanvas",
+      class extends Fake {
+        constructor(w: number, h: number) {
+          super(w, h);
+          sizes.push([w, h]);
+        }
+      },
+    );
+    initCaptureMotionBlur(movingHost().h);
+    expect(sizes[0]).toEqual([1280, 720]);
+  });
+
+  it("prefers the engine's injected scale over a devicePixelRatio that fell back to 1", () => {
+    installHtmlInCanvas();
+    vi.stubGlobal("devicePixelRatio", 1);
+    vi.stubGlobal("__HF_DEVICE_SCALE_FACTOR__", 2);
+    const { root, h } = movingHost();
+    initCaptureMotionBlur(h);
+    void paintCaptureMotionBlur(0.5, PLAY);
+    expect(captureCanvas(root).width).toBe(1280);
+  });
+
+  it("rebuilds the canvases when the ratio changes between frames", () => {
+    installHtmlInCanvas();
+    const { root, h } = movingHost();
+    initCaptureMotionBlur(h);
+    const first = paintCaptureMotionBlur(0.5, PLAY);
+    expect(captureCanvas(root).width).toBe(640);
+    captureCanvas(root).dispatchEvent(new Event("paint"));
+    captureCanvas(root).dispatchEvent(new Event("paint"));
+    void first;
+    vi.stubGlobal("devicePixelRatio", 2);
+    void paintCaptureMotionBlur(0.6, PLAY);
+    expect(captureCanvas(root).width).toBe(1280);
+  });
 });
