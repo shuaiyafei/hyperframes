@@ -41,6 +41,26 @@ describe("discoverMovers", () => {
     expect(movers).toEqual([fast]);
   });
 
+  // A 100 px jump inside one scan step at 5 s: slow to a still-style baseline, fast between two steps.
+  function jumpScene() {
+    const scene = document.createElement("div");
+    const jumper = element(scene, "jumper");
+    const seek = (t: number): void => {
+      jumper.style.transform = `translateX(${100 * Math.min(1, Math.max(0, (t - 5) / 0.04))}px)`;
+    };
+    return { scene, jumper, seek };
+  }
+
+  it("finds the same movers whatever time the scan is started at", () => {
+    const found = [0, 3, 7].map((start) => {
+      const { scene, jumper, seek } = jumpScene();
+      seek(start);
+      const { movers } = discoverMovers({ scene, durationSeconds: 10, fps: 30, seek });
+      return movers.map((m) => m === jumper);
+    });
+    expect(found).toEqual([[true], [true], [true]]);
+  });
+
   it("reports each scan step after its seek, in order, without seeking more", () => {
     const { scene, seek } = setup();
     const events: string[] = [];
