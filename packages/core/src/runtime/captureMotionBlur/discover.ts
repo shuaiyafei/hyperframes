@@ -37,6 +37,8 @@ export interface DiscoverOptions {
   fps: number;
   /** Seek the composition (timeline + adapters) to a time. */
   seek: (t: number) => void;
+  /** Called after each scan step's seek (step `i` of `steps`); adds no seeks of its own. */
+  onStep?: (i: number, steps: number) => void;
 }
 
 export interface Discovery {
@@ -119,7 +121,13 @@ function edgeShift(a: DOMRect | undefined, b: DOMRect | undefined): number {
   );
 }
 
-export function discoverMovers({ scene, durationSeconds, fps, seek }: DiscoverOptions): Discovery {
+export function discoverMovers({
+  scene,
+  durationSeconds,
+  fps,
+  seek,
+  onStep,
+}: DiscoverOptions): Discovery {
   const all = [...scene.querySelectorAll("*")].filter(isHtmlElement);
   const dynamic = new Set<Element>(pageAnimated(scene));
   const first = all.map(styleKey);
@@ -137,6 +145,7 @@ export function discoverMovers({ scene, durationSeconds, fps, seek }: DiscoverOp
 
   for (let i = 0; i <= steps; i++) {
     seek((i / steps) * durationSeconds);
+    onStep?.(i, steps);
     // Rects only for elements whose style has changed; the first read flushes layout once.
     const rects: Array<DOMRect | undefined> = [];
     all.forEach((el, j) => {

@@ -41,6 +41,27 @@ describe("discoverMovers", () => {
     expect(movers).toEqual([fast]);
   });
 
+  it("reports each scan step after its seek, in order, without seeking more", () => {
+    const { scene, seek } = setup();
+    const events: string[] = [];
+    const plain = vi.fn(seek);
+    discoverMovers({ scene, durationSeconds: 1, fps: 30, seek: plain });
+    const traced = vi.fn((t: number) => {
+      events.push(`seek ${t.toFixed(3)}`);
+      seek(t);
+    });
+    discoverMovers({
+      scene,
+      durationSeconds: 1,
+      fps: 30,
+      seek: traced,
+      onStep: (i, steps) => events.push(`step ${i}/${steps}`),
+    });
+    expect(traced.mock.calls.length).toBe(plain.mock.calls.length);
+    expect(events.slice(0, 4)).toEqual(["seek 0.000", "step 0/30", "seek 0.033", "step 1/30"]);
+    expect(events.at(-1)).toBe("step 30/30");
+  });
+
   it("marks every changing element dynamic, slow and opted-out ones included", () => {
     const { scene, fast, fastChild, slow, still, off, seek } = setup();
     const { dynamic } = discoverMovers({ scene, durationSeconds: 1, fps: 30, seek });
