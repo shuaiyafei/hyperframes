@@ -34,8 +34,10 @@ interface Defect {
 
 const hasHidden3dFace = (_root: HTMLElement, env: DefectEnv): boolean => env.backface;
 
+// The whole document, not just the root: a render's shader-transition compositor appends its
+// WebGL canvas to <body>, while preview puts it inside the root; both must give one answer.
 const hasAcceleratedCanvas = (root: HTMLElement, env: DefectEnv): boolean =>
-  Array.from(root.querySelectorAll("canvas")).some(env.isAccelerated);
+  Array.from(root.ownerDocument.querySelectorAll("canvas")).some(env.isAccelerated);
 
 // GSAP writes an identity matrix when it rewinds a root transform; that changes nothing on screen.
 const IDENTITY_TRANSFORM =

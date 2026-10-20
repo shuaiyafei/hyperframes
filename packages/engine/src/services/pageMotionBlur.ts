@@ -8,6 +8,14 @@ import { PAGE_DEVICE_SCALE_GLOBAL, PAGE_MOTION_BLUR_OFF_GLOBAL } from "@hyperfra
 import type { Page } from "puppeteer-core";
 import type { CaptureOptions } from "../types.js";
 
+function pageOffReason(
+  options: Pick<CaptureOptions, "motionBlur" | "pageMotionBlur">,
+): string | null {
+  if (options.motionBlur) return "engine-motion-blur";
+  if (options.pageMotionBlur === "off") return "preview-unsupported";
+  return options.pageMotionBlur ?? null;
+}
+
 export async function installPageMotionBlur(
   page: Pick<Page, "evaluateOnNewDocument">,
   options: Pick<CaptureOptions, "motionBlur" | "pageMotionBlur" | "deviceScaleFactor">,
@@ -22,11 +30,7 @@ export async function installPageMotionBlur(
       scale,
     );
   }
-  const off = options.motionBlur
-    ? "engine-motion-blur"
-    : options.pageMotionBlur === "off"
-      ? "preview-unsupported"
-      : null;
+  const off = pageOffReason(options);
   if (!off) return;
   await page.evaluateOnNewDocument(
     (key: string, v: string) => {
@@ -35,4 +39,20 @@ export async function installPageMotionBlur(
     PAGE_MOTION_BLUR_OFF_GLOBAL,
     off,
   );
+}
+
+/** One line saying what the page's blur did for this session; null when the page never asked for blur. */
+export async function describePageMotionBlur(page: Pick<Page, "evaluate">): Promise<string | null> {
+  const r = await page.evaluate(() => {
+    const api: unknown = Reflect.get(window, "__hfMotionBlur");
+    const report: unknown = api && typeof api === "object" ? Reflect.get(api, "report") : null;
+    const got: unknown = typeof report === "function" ? report() : null;
+    if (!got || typeof got !== "object") return null;
+    return {
+      state: String(Reflect.get(got, "state")),
+      code: String(Reflect.get(got, "reasonCode")),
+      movers: Number(Reflect.get(got, "movers")),
+    };
+  });
+  return r && `[motion-blur] ${r.state} reasonCode=${r.code} movers=${r.movers}`;
 }

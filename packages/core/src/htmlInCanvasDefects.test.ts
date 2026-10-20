@@ -83,6 +83,17 @@ describe("accelerated-canvas", () => {
     }
   });
 
+  it("finds a WebGL canvas outside the root, where a render's shader compositor puts it", () => {
+    const root = mount("");
+    const outside = document.createElement("canvas");
+    document.body.append(outside);
+    for (const major of VERSIONS) {
+      expect(codeOn(major, root, env({ isAccelerated: (c) => c === outside }))).toBe(
+        "accelerated-canvas",
+      );
+    }
+  });
+
   it("ignores a canvas the page did not give a WebGL context", () => {
     expect(code(mount("<canvas></canvas>"), env())).toBeNull();
   });
@@ -136,12 +147,13 @@ describe("no version gating", () => {
   // Mutation guard: a defect that once applied only below 157 (or from 155) must still block on
   // 158 (or 152). Reintroducing any from/until test on the Chrome major fails this.
   it("blocks a WebGL canvas, a root transform and a root fade on every version alike", () => {
-    const fixtures: Array<[string, HTMLElement, DefectEnv]> = [];
-    const glRoot = mount("<canvas></canvas>");
-    fixtures.push(["accelerated-canvas", glRoot, env({ isAccelerated: () => true })]);
-    fixtures.push(["root-transform", mount("", "transform: translateX(5px)"), env()]);
-    fixtures.push(["root-opacity", mount("", "opacity: 0.2"), env()]);
-    for (const [expected, root, e] of fixtures) {
+    const fixtures: Array<[string, () => HTMLElement, DefectEnv]> = [
+      ["accelerated-canvas", () => mount("<canvas></canvas>"), env({ isAccelerated: () => true })],
+      ["root-transform", () => mount("", "transform: translateX(5px)"), env()],
+      ["root-opacity", () => mount("", "opacity: 0.2"), env()],
+    ];
+    for (const [expected, build, e] of fixtures) {
+      const root = build();
       const seen = new Set(VERSIONS.map((major) => codeOn(major, root, e)));
       expect([...seen]).toEqual([expected]);
     }
