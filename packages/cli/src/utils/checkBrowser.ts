@@ -1,5 +1,6 @@
 import type { CheckDeadline } from "./checkDeadline.js";
 import { BrowserCleanupError, closeManagedBrowser } from "../browser/launch.js";
+import { collectMotionBlurDrafts, dropMotionBlurConsoleEcho } from "./checkMotionBlur.js";
 import { checkSnapshotDirectory } from "./checkSnapshotDirectory.js";
 import { mkdirSync, writeFileSync } from "node:fs";
 import os from "node:os";
@@ -77,6 +78,7 @@ interface RuntimeDraft {
   line?: number;
   count?: number;
   abortedImage?: boolean;
+  fixHint?: string;
 }
 
 type RuntimeStamp = Pick<RuntimeDraft, "time" | "timeRange">;
@@ -272,6 +274,8 @@ export async function runBrowserCheck(
       const message = tweenTailMessage(tail);
       drafts.push({ code: "gsap_tween_tail", severity: "warning", message, time: tail.later.end });
     }
+    const blur = await collectMotionBlurDrafts(page);
+    drafts.push(...blur);
     const sampleLog = sampleWindow(drafts);
     const driver = createPageDriver(page, clock, sampleLog);
     const result = await runGrid(driver, options, motion, helpers);
@@ -283,7 +287,7 @@ export async function runBrowserCheck(
       ...result,
       timings: { ...result.timings, launchSettleMs },
       runtimeFindings: dropFailedProxyEchoes(
-        keepBrokenImageAborts(merged, broken),
+        dropMotionBlurConsoleEcho(keepBrokenImageAborts(merged, broken), blur),
         failedPaths,
       ).map((draft) => runtimeFinding(draft, rootAnchor)),
     };
@@ -1701,6 +1705,7 @@ function runtimeFinding(draft: RuntimeDraft, root: CheckAnchor): CheckFinding {
     ...(draft.timeRange ? { timeRange: draft.timeRange } : {}),
     url: draft.url,
     line: draft.line,
+    ...(draft.fixHint ? { fixHint: draft.fixHint } : {}),
   };
 }
 
