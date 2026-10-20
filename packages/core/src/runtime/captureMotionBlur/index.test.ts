@@ -220,6 +220,52 @@ describe("opt-in and off switches", () => {
     expect(win.__hfMotionBlur?.report().reason).toMatch(/WebGL/);
   });
 
+  it("stays off for a hidden-backface card in a 3D context, but not for a flat one", () => {
+    installHtmlInCanvas();
+    const flat = makeRoot();
+    flat.innerHTML = '<div style="backface-visibility: hidden"></div>';
+    initCaptureMotionBlur(host(flat));
+    expect(win.__hfMotionBlur?.report().state).toBe("on");
+
+    resetCaptureMotionBlurForTests();
+    flat.innerHTML =
+      '<div style="transform-style: preserve-3d"><div style="backface-visibility: hidden"></div></div>';
+    initCaptureMotionBlur(host(flat));
+    expect(win.__hfMotionBlur?.report().state).toBe("off");
+    expect(win.__hfMotionBlur?.report().reason).toMatch(/backface-visibility/);
+  });
+
+  it("turns off instead of wrapping when the root gets a transform or opacity after init", () => {
+    installHtmlInCanvas();
+    for (const style of ["transform: scale(0.5)", "opacity: 0.5"]) {
+      const { root, h } = movingHost();
+      initCaptureMotionBlur(h);
+      root.setAttribute("style", style);
+      void paintCaptureMotionBlur(0.5, { engineMode: true });
+      expect(root.parentElement).toBe(document.body);
+      expect(win.__hfMotionBlur?.report().state).toBe("off");
+      expect(win.__hfMotionBlur?.report().reason).toMatch(/root/);
+      resetCaptureMotionBlurForTests();
+      document.body.innerHTML = "";
+    }
+  });
+
+  it("rescans for a hidden-backface card when the timeline changes", () => {
+    installHtmlInCanvas();
+    const { root, h } = movingHost();
+    let tl = "a";
+    initCaptureMotionBlur({ ...h, timeline: () => tl });
+    void paintCaptureMotionBlur(0.5, { engineMode: true });
+    expect(win.__hfMotionBlur?.report().state).toBe("on");
+    root.insertAdjacentHTML(
+      "beforeend",
+      '<div style="transform-style: preserve-3d"><div style="backface-visibility: hidden"></div></div>',
+    );
+    tl = "b";
+    void paintCaptureMotionBlur(0.6, { engineMode: true });
+    expect(win.__hfMotionBlur?.report().reason).toMatch(/backface-visibility/);
+  });
+
   it("clamps the shutter angle", () => {
     installHtmlInCanvas();
     const root = makeRoot({ "data-motion-blur": "on", "data-motion-blur-shutter": "9999" });

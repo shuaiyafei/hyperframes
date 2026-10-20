@@ -12,13 +12,13 @@
  */
 
 import {
-  CAPTURE_CANVAS_SELECTOR,
   htmlInCanvasForm,
   markCaptureCanvas,
   markCaptured,
   unmarkCaptured,
   type HtmlInCanvasForm,
 } from "../../htmlInCanvas";
+import { type DefectEnv, findCaptureDefect, scanBackfaceDefect } from "../../htmlInCanvasDefects";
 import {
   PAGE_DEVICE_SCALE_GLOBAL,
   PAGE_MOTION_BLUR_OFF_GLOBAL,
@@ -133,16 +133,8 @@ export function trackAcceleratedCanvases(): void {
   });
 }
 
-/** What in the composition the capture cannot take, checked again per frame (scripts add canvases). */
-function captureBlocker(root: HTMLElement): string | null {
-  // A capture canvas inside another one blocks the renderer's main thread.
-  if (root.querySelector(CAPTURE_CANVAS_SELECTOR))
-    return "the composition already uses html-in-canvas";
-  for (const canvas of root.querySelectorAll("canvas")) {
-    if (acceleratedCanvases.has(canvas))
-      return "the composition draws a WebGL/WebGPU canvas, which html-in-canvas captures frozen";
-  }
-  return null;
+function defectEnv(backface: boolean): DefectEnv {
+  return { isAccelerated: (canvas) => acceleratedCanvases.has(canvas), backface };
 }
 
 function unsupportedReason(root: HTMLElement): string | null {
@@ -151,7 +143,7 @@ function unsupportedReason(root: HTMLElement): string | null {
   if (!supportsCaptureMotionBlur()) {
     return "html-in-canvas (drawElementImage) is unavailable in this browser";
   }
-  return captureBlocker(root);
+  return findCaptureDefect(root, defectEnv(scanBackfaceDefect(root)))?.reason ?? null;
 }
 
 function describe(el: Element): string {
@@ -219,6 +211,7 @@ function createInstance(host: CaptureMotionBlurHost, config: Config, form: HtmlI
   let sampleMs = 0;
   let scanMs = 0;
   let scannedTimeline: unknown = undefined;
+  let backface = false;
   let wrapped = false;
   // The output still shows the last frame of the previous wrap until this one draws.
   let staleOutput = false;
@@ -258,6 +251,7 @@ function createInstance(host: CaptureMotionBlurHost, config: Config, form: HtmlI
 
   function discover(restoreTo: number): void {
     scannedTimeline = host.timeline();
+    backface = scanBackfaceDefect(root);
     const s0 = performance.now();
     const found = discoverMovers({
       scene: root,
@@ -444,9 +438,9 @@ function createInstance(host: CaptureMotionBlurHost, config: Config, form: HtmlI
       }
       // Checked again here, not only at init: a block's script can add its own capture canvas
       // (wrapping one inside ours hangs the renderer) or a WebGL canvas later.
-      const blocked = captureBlocker(root);
+      const blocked = findCaptureDefect(root, defectEnv(backface));
       if (blocked) {
-        disable(blocked);
+        disable(blocked.reason);
         return Promise.resolve();
       }
       wrap();
